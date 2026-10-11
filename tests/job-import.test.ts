@@ -21,6 +21,46 @@ const fixture = () => {
     },
   };
 };
+test("校招导出列名与投递、测评、简历挂状态映射，原始阶段保留", () => {
+  const f = fixture();
+  try {
+    const source = f.store.saveSource({
+      name: "校招模板（示例）",
+      kind: "投递记录",
+      url: "https://example.com/campus",
+    });
+    const headers = ["公司", "base", "投递志愿与顺序", "当前进度"];
+    const mapping = guessMapping(headers);
+    assert.equal(mapping.title, 2);
+    assert.equal(mapping.location, 1);
+    assert.equal(guessHeader([["说明"], headers]), 1);
+    const request = {
+      sourceId: source.id,
+      headers,
+      rows: [
+        ["示例甲", "北京", "营销", "投递"],
+        ["示例乙", "上海", "品牌", "测评"],
+        ["示例丙", "杭州", "运营", "简历挂"],
+      ],
+      mapping,
+      defaultStage: "已投递",
+      allowUpdates: false,
+    };
+    const preview = f.store.previewJobSheet(request);
+    assert.deepEqual(preview.counts, { 新增: 3, 更新: 0, 重复: 0, 错误: 0 });
+    assert.deepEqual(
+      preview.rows.map((r) => r.job?.stage),
+      ["已投递", "笔试", "未通过/结束"],
+    );
+    f.store.importJobSheet(request);
+    assert.match(
+      f.store.state().jobs.find((j) => j.company === "示例乙")!.notes,
+      /当前进度：测评/,
+    );
+  } finally {
+    f.close();
+  }
+});
 test("CSV/TSV/UTF16 支持中文、引号、换行与 Excel 多工作表日期", async () => {
   const csv = await readSpreadsheet(
     Buffer.from(

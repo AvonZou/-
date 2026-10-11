@@ -50,11 +50,20 @@ const aliases: Record<ImportField, string[]> = {
     "职位",
     "职位名称",
     "招聘岗位",
+    "投递志愿与顺序",
     "title",
     "position",
   ],
   direction: ["业务方向", "方向", "行业", "岗位类别"],
-  location: ["地区", "城市", "工作地点", "工作城市", "地点", "location"],
+  location: [
+    "地区",
+    "城市",
+    "工作地点",
+    "工作城市",
+    "地点",
+    "location",
+    "base",
+  ],
   jd: ["jd", "jd正文", "岗位描述", "职位描述", "岗位职责"],
   officialUrl: [
     "官方链接",
@@ -148,6 +157,7 @@ function importedStage(raw: string, defaultStage: Job["stage"]) {
     "收藏/待评估": ["收藏", "待评估", "未投递"],
     待投递: ["待投", "准备投递"],
     已投递: [
+      "投递",
       "已投",
       "网申",
       "已网申",
@@ -156,7 +166,7 @@ function importedStage(raw: string, defaultStage: Job["stage"]) {
       "简历评估",
       "简历筛选中",
     ],
-    笔试: ["待笔试", "笔试中", "笔试完成"],
+    笔试: ["待笔试", "笔试中", "笔试完成", "测评"],
     面试: [
       "一面",
       "二面",
@@ -177,6 +187,7 @@ function importedStage(raw: string, defaultStage: Job["stage"]) {
       "已挂",
       "挂了",
       "已结束",
+      "简历挂",
     ],
   };
   for (const stage of stages) if (groups[stage].includes(s)) return stage;
