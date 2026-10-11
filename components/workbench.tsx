@@ -46,6 +46,8 @@ import {
 } from "@/lib/model";
 import { plan, todayKey, weekly } from "@/lib/planner";
 import { Badge, Empty, Modal, Field } from "./ui";
+import JobSources from "./job-sources";
+import DailyJobs from "./daily-jobs";
 
 type Page =
   | "首页"
@@ -120,8 +122,8 @@ export default function Workbench() {
     [archiveFilter, setArchiveFilter] = useState(false),
     [direction, setDirection] = useState("全部"),
     [company, setCompany] = useState("全部"),
-    [view, setView] = useState<"table" | "board">("table"),
-    [dragId, setDragId] = useState<string>(),
+    [jobOrigin, setJobOrigin] = useState("全部"),
+    [view, setView] = useState<"table" | "board" | "sources">("table"),
     [backup, setBackup] = useState<unknown>(),
     [preview, setPreview] = useState<Record<
       string,
@@ -170,6 +172,7 @@ export default function Workbench() {
     setStatusFilter("全部");
     setModuleFilter("全部");
     setArchiveFilter(false);
+    setJobOrigin("全部");
     setMobile(false);
   }
   function newTask(module: (typeof modules)[number] = "求职") {
@@ -267,6 +270,7 @@ export default function Workbench() {
   const filteredJobs = jobs.filter(
     (j) =>
       j.archived === archiveFilter &&
+      (jobOrigin === "全部" || j.origin === jobOrigin) &&
       (!search ||
         `${j.company} ${j.title} ${j.jd} ${j.notes}`
           .toLowerCase()
@@ -557,7 +561,12 @@ export default function Workbench() {
                       {
                         label: "求职进行中",
                         value: activeJobs.filter(
-                          (j) => !["Offer", "未通过/结束"].includes(j.stage),
+                          (j) =>
+                            !["Offer", "未通过/结束"].includes(j.stage) &&
+                            !(
+                              j.origin === "岗位信息库" &&
+                              j.stage === "收藏/待评估"
+                            ),
                         ).length,
                         desc: `${activeJobs.filter((j) => j.stage === "Offer").length} 个 Offer · ${followups.length} 个待跟进`,
                         icon: BriefcaseBusiness,
@@ -594,6 +603,19 @@ export default function Workbench() {
                       </div>
                     ))}
                   </div>
+                  <DailyJobs
+                    state={state}
+                    busy={busy}
+                    onSources={() => {
+                      navigate("求职雷达");
+                      setView("sources");
+                    }}
+                    onOpen={(id) => {
+                      navigate("求职雷达");
+                      setDetailId(id);
+                    }}
+                    onQueue={(job) => updateJob(job, { stage: "待投递" })}
+                  />
                   <div className="dashboard-columns">
                     <div className="dashboard-left">
                       <section className="panel planner">
@@ -716,11 +738,21 @@ export default function Workbench() {
                                 key={t.id}
                                 className="schedule-row"
                                 draggable={!busy}
-                                onDragStart={() => setDragId(t.id)}
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData(
+                                    "application/x-nextstep-task",
+                                    t.id,
+                                  );
+                                  e.dataTransfer.effectAllowed = "move";
+                                }}
                                 onDragOver={(e) => e.preventDefault()}
-                                onDrop={() => {
-                                  if (dragId) moveSchedule(dragId, t.id);
-                                  setDragId(undefined);
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const id = e.dataTransfer.getData(
+                                    "application/x-nextstep-task",
+                                  );
+                                  if (id) moveSchedule(id, t.id);
                                 }}
                               >
                                 <GripVertical size={16} className="grip" />
@@ -1107,6 +1139,15 @@ export default function Workbench() {
                         />
                         归档
                       </label>
+                      <select
+                        aria-label="记录类型筛选"
+                        value={jobOrigin}
+                        onChange={(e) => setJobOrigin(e.target.value)}
+                      >
+                        {["全部", "岗位信息库", "投递记录", "手动"].map((o) => (
+                          <option key={o}>{o}</option>
+                        ))}
+                      </select>
                       <div className="view-toggle">
                         <button
                           className={view === "table" ? "selected" : ""}
@@ -1120,6 +1161,12 @@ export default function Workbench() {
                         >
                           看板
                         </button>
+                        <button
+                          className={view === "sources" ? "selected" : ""}
+                          onClick={() => setView("sources")}
+                        >
+                          来源与导入
+                        </button>
                       </div>
                       <a
                         href="/api/jobs.csv"
@@ -1130,7 +1177,9 @@ export default function Workbench() {
                         <Download size={17} />
                       </a>
                     </div>
-                    {view === "table" ? (
+                    {view === "sources" ? (
+                      <JobSources state={state} onRefresh={refresh} />
+                    ) : view === "table" ? (
                       filteredJobs.length ? (
                         <div className="table-scroll">
                           <table>
@@ -1158,6 +1207,17 @@ export default function Workbench() {
                                       </span>
                                       <span>
                                         <strong>{j.company}</strong>
+                                        {j.origin !== "手动" && (
+                                          <Badge
+                                            tone={
+                                              j.origin === "投递记录"
+                                                ? "purple"
+                                                : "blue"
+                                            }
+                                          >
+                                            {j.origin}
+                                          </Badge>
+                                        )}
                                         <small>{j.title}</small>
                                       </span>
                                     </button>
@@ -1235,10 +1295,14 @@ export default function Workbench() {
                               className="kanban-column"
                               key={s}
                               onDragOver={(e) => e.preventDefault()}
-                              onDrop={() => {
-                                const j = jobs.find((j) => j.id === dragId);
-                                if (j) void updateJob(j, { stage: s });
-                                setDragId(undefined);
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const id = e.dataTransfer.getData(
+                                  "application/x-nextstep-job",
+                                );
+                                const job = jobs.find((j) => j.id === id);
+                                if (job) void updateJob(job, { stage: s });
                               }}
                             >
                               <div className="kanban-title">
@@ -1257,7 +1321,13 @@ export default function Workbench() {
                                   <article
                                     className="job-card"
                                     draggable={!busy}
-                                    onDragStart={() => setDragId(j.id)}
+                                    onDragStart={(e) => {
+                                      e.dataTransfer.setData(
+                                        "application/x-nextstep-job",
+                                        j.id,
+                                      );
+                                      e.dataTransfer.effectAllowed = "move";
+                                    }}
                                     key={j.id}
                                   >
                                     <button
@@ -1428,7 +1498,7 @@ export default function Workbench() {
                     </div>
                     <p className="settings-description">
                       JSON
-                      备份包含当前阶段的全部任务、岗位、流程日志和排程设置。文件可能含私人信息，请保存到安全的位置，不要提交到
+                      备份包含当前阶段的全部任务、岗位、来源、流程日志和排程设置。文件可能含私人信息，请保存到安全的位置，不要提交到
                       GitHub。
                     </p>
                     <div className="backup-actions">
@@ -1494,7 +1564,9 @@ export default function Workbench() {
                               ? "岗位"
                               : key === "tasks"
                                 ? "任务"
-                                : "流程记录"}
+                                : key === "sources"
+                                  ? "来源"
+                                  : "流程记录"}
                             ：新增 {value.new} 条，跳过重复 {value.duplicates}{" "}
                             条
                           </p>
@@ -1982,6 +2054,22 @@ export default function Workbench() {
                 简历版本 <strong>{detail.resumeVersion || "未填写"}</strong>
               </p>
             </div>
+            {detail.sourceId &&
+              state?.sources.find((s) => s.id === detail.sourceId) && (
+                <div className="detail-source">
+                  <Badge tone="blue">{detail.origin}</Badge>
+                  <a
+                    className="text-button accent"
+                    href={
+                      state.sources.find((s) => s.id === detail.sourceId)!.url
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    查看原始文档 <ExternalLink size={14} />
+                  </a>
+                </div>
+              )}
             {detail.officialUrl && (
               <a
                 className="text-button accent"

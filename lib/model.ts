@@ -47,6 +47,9 @@ export const taskInput = z
   .strict();
 export const jobInput = z
   .object({
+    origin: z.enum(["手动", "岗位信息库", "投递记录"]).default("手动"),
+    sourceId: id.nullable().default(null),
+    sourceRowKey: text(1000).default(""),
     company: text(200).trim().min(1, "请填写公司"),
     title: text(200).trim().min(1, "请填写岗位"),
     direction: text(100),
@@ -93,16 +96,38 @@ export const eventSchema = z
   .refine((v) => v.kind !== "面试" || v.at !== "", "面试安排需要时间");
 export const settingsSchema = z
   .object({
+    recommendationKeywords: z
+      .array(text(100))
+      .max(30)
+      .default(["内容", "品牌", "营销", "AI", "出海"]),
+    recommendationLocations: z.array(text(100)).max(30).default([]),
+    dailyRecommendationLimit: z.number().int().min(1).max(20).default(5),
     availableMinutes: z.number().int().min(15).max(1440),
     interviewMode: z.boolean(),
     scheduleDate: date,
     scheduleOrder: z.array(id).max(10000),
   })
   .strict();
+export const sourceInput = z
+  .object({
+    name: text(100).trim().min(1),
+    kind: z.enum(["岗位信息库", "投递记录"]),
+    url: text(2000).refine(
+      (v) => /^https:\/\//i.test(v) && URL.canParse(v),
+      "请填写 HTTPS 文档链接",
+    ),
+  })
+  .strict();
+export const sourceSchema = sourceInput.extend({
+  ...meta,
+  lastImportedAt: z.string().datetime().nullable(),
+});
+export type Source = z.infer<typeof sourceSchema>;
 export const backupSchema = z
   .object({
     version: z.literal(1),
     exportedAt: z.string().datetime(),
+    sources: z.array(sourceSchema).max(100).default([]),
     tasks: z.array(taskSchema).max(10000),
     jobs: z.array(jobSchema).max(10000),
     events: z.array(eventSchema).max(20000),
@@ -114,6 +139,7 @@ export type Job = z.infer<typeof jobSchema>;
 export type JobEvent = z.infer<typeof eventSchema>;
 export type Settings = z.infer<typeof settingsSchema>;
 export type State = {
+  sources: Source[];
   tasks: Task[];
   jobs: Job[];
   events: JobEvent[];
@@ -133,6 +159,9 @@ export const emptyTask: z.infer<typeof taskInput> = {
   archived: false,
 };
 export const emptyJob: z.infer<typeof jobInput> = {
+  origin: "手动",
+  sourceId: null,
+  sourceRowKey: "",
   company: "",
   title: "",
   direction: "",
@@ -151,6 +180,9 @@ export const emptyJob: z.infer<typeof jobInput> = {
   archived: false,
 };
 export const defaultSettings: Settings = {
+  recommendationKeywords: ["内容", "品牌", "营销", "AI", "出海"],
+  recommendationLocations: [],
+  dailyRecommendationLimit: 5,
   availableMinutes: 180,
   interviewMode: false,
   scheduleDate: "",

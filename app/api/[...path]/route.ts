@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
+import { readSpreadsheet } from "@/lib/spreadsheet";
 import { AppError, getStore } from "@/lib/db";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -94,6 +95,7 @@ async function handle(req: NextRequest) {
       tasks: "tasks",
       jobs: "jobs",
       events: "job_events",
+      sources: "sources",
     } as const;
     if (method === "DELETE" && path[0] in tables && path[1]) {
       store.remove(tables[path[0] as keyof typeof tables], path[1]);
@@ -103,6 +105,26 @@ async function handle(req: NextRequest) {
       throw new AppError("接口不存在", 404);
     if (Number(req.headers.get("content-length") ?? 0) > 10 * 1024 * 1024)
       throw new AppError("文件超过 10 MB", 413);
+    if (method === "POST" && path[0] === "sheet-read") {
+      const form = await req.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) throw new AppError("请选择表格文件");
+      if (file.size > 10 * 1024 * 1024)
+        throw new AppError("文件超过 10 MB", 413);
+      try {
+        return NextResponse.json(
+          {
+            sheets: await readSpreadsheet(
+              Buffer.from(await file.arrayBuffer()),
+              file.name,
+            ),
+          },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      } catch (e) {
+        throw new AppError(e instanceof Error ? e.message : "文件无法读取");
+      }
+    }
     const text = await req.text();
     if (Buffer.byteLength(text) > 10 * 1024 * 1024)
       throw new AppError("文件超过 10 MB", 413);
@@ -124,6 +146,12 @@ async function handle(req: NextRequest) {
     if (path[0] === "jobs") return NextResponse.json(store.saveJob(body, id));
     if (path[0] === "events")
       return NextResponse.json(store.saveEvent(body, id));
+    if (path[0] === "sources")
+      return NextResponse.json(store.saveSource(body, id));
+    if (path[0] === "job-sheet-preview")
+      return NextResponse.json(store.previewJobSheet(body));
+    if (path[0] === "job-sheet-import")
+      return NextResponse.json(store.importJobSheet(body));
     if (path[0] === "settings") return NextResponse.json(store.settings(body));
     if (path[0] === "import-preview")
       return NextResponse.json(store.preview(body));

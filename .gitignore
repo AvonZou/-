@@ -17,3 +17,9 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 *.log
+
+# Private spreadsheet exports belong outside Git. Test fixtures are generated in memory.
+*.xlsx
+*.xls
+*.csv
+*.tsv

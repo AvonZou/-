@@ -26,7 +26,7 @@ npm start
 ## 数据初始化、备份和恢复
 
 - `npm run db:init` 创建 `data/nextstep.db`、执行迁移、建立空表。可重复运行，不覆盖记录。
-- 在「设置与备份」点击导出完整 JSON，选择保存位置。岗位可额外导出 CSV；CSV 不用于完整恢复。
+- 在「设置与备份」点击导出完整 JSON，选择保存位置。岗位可额外导出 CSV；CSV 不用于完整恢复。备份包含在线来源链接与推荐偏好，云端数据要迁移到 Windows 时使用 JSON 导入。
 - 恢复：选择导出的 JSON，检查预览数量，确认合并导入。相同 ID 跳过而不覆盖；不同 ID 的同名记录视为不同记录。导入不自动去重公司或任务标题。
 - 向空数据库导入可恢复全部阶段 A 记录及排程设置。向已有数据导入会保留现有设置和同 ID 记录。
 - 如需恢复到空库，先停止应用，备份当前 `data` 文件夹到仓库外，再将整个 `data` 文件夹移到安全位置，启动应用后导入 JSON。不要只删除 `.db` 而保留 WAL/SHM 文件。不会提供一键清空以避免误删。
@@ -48,3 +48,5 @@ npm start
 ## 测试
 
 `npm run typecheck`、`npm test`、`npm run build`。浏览器自动化需要 `npx playwright install chromium`，之后停止应用并运行 `npm run test:e2e`。测试库使用 `.cache/e2e-data`，不接触默认私人数据。完整手动流程见 TEST_PLAN.md。
+
+在线文档导出表的接入方法与去重规则见 [docs/JOB_SOURCES.md](docs/JOB_SOURCES.md)。保存链接不会自动读取在线内容。

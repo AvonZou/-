@@ -5,6 +5,9 @@ import { randomUUID } from "node:crypto";
 import {
   taskInput,
   jobInput,
+  jobSchema,
+  sourceInput,
+  type Source,
   eventInput,
   settingsSchema,
   backupSchema,
@@ -15,6 +18,7 @@ import {
   type State,
   type Backup,
 } from "./model";
+import { jobImportRequest, previewJobs } from "./job-import";
 export class AppError extends Error {
   constructor(
     message: string,
@@ -30,6 +34,7 @@ const migrations = [
    CREATE TABLE job_events (id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE, payload TEXT NOT NULL);
    CREATE TABLE app_settings (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL);
    CREATE INDEX tasks_job ON tasks(job_id); CREATE INDEX events_job ON job_events(job_id);`,
+  `CREATE TABLE sources (id TEXT PRIMARY KEY, payload TEXT NOT NULL);`,
 ];
 export class Store {
   db: DatabaseSync;
@@ -63,7 +68,7 @@ export class Store {
       throw e;
     }
   }
-  rows<T>(table: "tasks" | "jobs" | "job_events"): T[] {
+  rows<T>(table: "tasks" | "jobs" | "job_events" | "sources"): T[] {
     return (
       this.db
         .prepare(`SELECT payload FROM ${table} ORDER BY rowid DESC`)
@@ -78,18 +83,21 @@ export class Store {
     ).map((r) => ({ ...JSON.parse(r.payload), jobId: r.job_id }));
     return {
       tasks,
-      jobs: this.rows<Job>("jobs"),
+      jobs: this.rows<Job>("jobs").map((j) => jobSchema.parse(j)),
+      sources: this.rows<Source>("sources"),
       events: this.rows<JobEvent>("job_events"),
-      settings: JSON.parse(
-        (
-          this.db
-            .prepare("SELECT payload FROM app_settings WHERE id=1")
-            .get() as { payload: string }
-        ).payload,
+      settings: settingsSchema.parse(
+        JSON.parse(
+          (
+            this.db
+              .prepare("SELECT payload FROM app_settings WHERE id=1")
+              .get() as { payload: string }
+          ).payload,
+        ),
       ),
     };
   }
-  find<T>(table: "tasks" | "jobs" | "job_events", id: string): T {
+  find<T>(table: "tasks" | "jobs" | "job_events" | "sources", id: string): T {
     const r = this.db
       .prepare(`SELECT payload FROM ${table} WHERE id=?`)
       .get(id) as { payload: string } | undefined;
@@ -122,6 +130,7 @@ export class Store {
     const input = jobInput.parse(raw),
       old = id ? this.find<Job>("jobs", id) : null,
       now = new Date().toISOString();
+    if (input.sourceId) this.find("sources", input.sourceId);
     const job: Job = {
       ...input,
       id: old?.id ?? randomUUID(),
@@ -163,9 +172,21 @@ export class Store {
       .run(event.id, event.jobId, JSON.stringify(event));
     return event;
   }
-  remove(table: "tasks" | "jobs" | "job_events", id: string) {
+  remove(table: "tasks" | "jobs" | "job_events" | "sources", id: string) {
     this.find(table, id);
-    this.db.prepare(`DELETE FROM ${table} WHERE id=?`).run(id);
+    this.transaction(() => {
+      if (table === "sources")
+        for (const j of this.state().jobs.filter((j) => j.sourceId === id))
+          this.db.prepare("UPDATE jobs SET payload=? WHERE id=?").run(
+            JSON.stringify({
+              ...j,
+              sourceId: null,
+              updatedAt: new Date().toISOString(),
+            }),
+            j.id,
+          );
+      this.db.prepare(`DELETE FROM ${table} WHERE id=?`).run(id);
+    });
   }
   settings(raw: unknown) {
     const value = settingsSchema.parse(raw);
@@ -208,9 +229,19 @@ export class Store {
   preview(raw: unknown) {
     const backup = backupSchema.parse(raw),
       current = this.state();
-    for (const list of [backup.tasks, backup.jobs, backup.events])
+    for (const list of [
+      backup.tasks,
+      backup.jobs,
+      backup.events,
+      backup.sources,
+    ])
       if (new Set(list.map((x) => x.id)).size !== list.length)
         throw new AppError("备份包含重复 ID");
+    const sourceIds = new Set(
+      [...current.sources, ...backup.sources].map((s) => s.id),
+    );
+    if (backup.jobs.some((j) => j.sourceId && !sourceIds.has(j.sourceId)))
+      throw new AppError("备份存在无效的来源关联");
     const jobIds = new Set([...current.jobs, ...backup.jobs].map((j) => j.id));
     if (
       backup.tasks.some((t) => t.jobId && !jobIds.has(t.jobId)) ||
@@ -223,6 +254,7 @@ export class Store {
         .length,
     });
     return {
+      sources: count(backup.sources, current.sources),
       jobs: count(backup.jobs, current.jobs),
       tasks: count(backup.tasks, current.tasks),
       events: count(backup.events, current.events),
@@ -237,6 +269,10 @@ export class Store {
       current.tasks.length === 0 &&
       current.events.length === 0;
     this.transaction(() => {
+      for (const source of backup.sources)
+        this.db
+          .prepare("INSERT OR IGNORE INTO sources(id,payload) VALUES (?,?)")
+          .run(source.id, JSON.stringify(source));
       for (const job of backup.jobs)
         this.db
           .prepare("INSERT OR IGNORE INTO jobs(id,payload) VALUES (?,?)")
@@ -257,6 +293,88 @@ export class Store {
       if (wasEmpty) this.settings(backup.settings);
     });
     return summary;
+  }
+  saveSource(raw: unknown, id?: string): Source {
+    const input = sourceInput.parse(raw),
+      old = id ? this.find<Source>("sources", id) : null,
+      now = new Date().toISOString();
+    const existing = this.state().sources.find(
+      (s) => s.url === input.url && s.id !== id,
+    );
+    if (existing) throw new AppError("此来源链接已保存");
+    const source = {
+      ...input,
+      id: old?.id ?? randomUUID(),
+      createdAt: old?.createdAt ?? now,
+      updatedAt: now,
+      lastImportedAt: old?.lastImportedAt ?? null,
+    };
+    this.db
+      .prepare(
+        "INSERT INTO sources(id,payload) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
+      )
+      .run(source.id, JSON.stringify(source));
+    return source;
+  }
+  previewJobSheet(raw: unknown) {
+    const req = jobImportRequest.parse(raw);
+    return previewJobs(
+      req,
+      this.find<Source>("sources", req.sourceId),
+      this.state().jobs,
+    );
+  }
+  importJobSheet(raw: unknown) {
+    const req = jobImportRequest.parse(raw);
+    const source = this.find<Source>("sources", req.sourceId);
+    const preview = this.previewJobSheet(req);
+    const items = preview.rows.filter(
+      (r) => r.action === "新增" || r.action === "更新",
+    );
+    if (!items.length)
+      throw new AppError("没有可导入的有效记录，请检查预览中的错误或重复行");
+    this.transaction(() => {
+      const now = new Date().toISOString();
+      for (const item of items) {
+        const old = item.existingId
+          ? this.find<Job>("jobs", item.existingId)
+          : null;
+        const job: Job = {
+          ...item.job!,
+          id: old?.id ?? randomUUID(),
+          createdAt: old?.createdAt ?? now,
+          updatedAt: now,
+        };
+        this.db
+          .prepare(
+            "INSERT INTO jobs(id,payload) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
+          )
+          .run(job.id, JSON.stringify(job));
+        if (old && old.stage !== job.stage)
+          this.saveEvent({
+            jobId: job.id,
+            kind: "日志",
+            title: `导入阶段变更：${old.stage} → ${job.stage}`,
+            at: "",
+            notes: "",
+          });
+        if (!old && source.kind === "投递记录")
+          this.saveEvent({
+            jobId: job.id,
+            kind: "日志",
+            title: "导入已有投递记录",
+            at: "",
+            notes: `来自：${source.name}`,
+          });
+      }
+      this.db
+        .prepare("UPDATE sources SET payload=? WHERE id=?")
+        .run(
+          JSON.stringify({ ...source, updatedAt: now, lastImportedAt: now }),
+          source.id,
+        );
+    });
+    return preview.counts;
   }
   close() {
     this.db.close();

@@ -233,9 +233,11 @@ test("任务延期归档、规则排程排序和看板拖动", async ({ page, re
     has: page.locator(".kanban-title").filter({ hasText: "待投递" }),
   });
   await card.dragTo(destination);
-  await expect(destination.locator(".job-card")).toContainText(
-    "浏览器测试（示例）拖动",
-  );
+  await expect(
+    destination
+      .locator(".job-card")
+      .filter({ hasText: "浏览器测试（示例）拖动" }),
+  ).toContainText("浏览器测试（示例）拖动");
 });
 
 test("保存失败时保留输入并允许重试", async ({ page }) => {
