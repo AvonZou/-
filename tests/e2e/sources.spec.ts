@@ -39,11 +39,13 @@ test("来源保存、CSV预览导入、真实推荐及个人投递去重", async
   await page.getByRole("button", { name: "确认导入有效记录" }).click();
   await expect(page.locator(".source-notice")).toContainText("表格已导入");
   await page.getByRole("button", { name: "首页", exact: true }).click();
+  await page.getByRole("button", { name: "找岗位", exact: false }).click();
   const card = page.locator(".recommendation-card").filter({ hasText: prefix });
   await expect(card).toHaveCount(1);
   await expect(card).toContainText("命中关键词");
   await expect(card).toContainText("快照");
   await page.reload();
+  await page.getByRole("button", { name: "找岗位", exact: false }).click();
   await expect(
     page.locator(".recommendation-card").filter({ hasText: prefix }),
   ).toHaveCount(1);
@@ -82,13 +84,14 @@ test("来源保存、CSV预览导入、真实推荐及个人投递去重", async
   page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "确认导入有效记录" }).click();
   await expect(page.locator(".source-notice")).toContainText("表格已导入");
-  await page.getByRole("button", { name: "表格", exact: true }).click();
+  await page.getByRole("button", { name: "投递记录", exact: true }).click();
+  await page.locator(".extra-filters > summary").click();
   await page.getByLabel("记录类型筛选").selectOption("投递记录");
   await page.getByLabel("搜索岗位").fill(prefix);
   await expect(page.locator("tbody tr")).toHaveCount(1);
-  await expect(page.getByLabel(prefix + "的阶段", { exact: true })).toHaveValue(
-    "面试",
-  );
+  await expect(
+    page.getByLabel(prefix + " · AI 出海品牌营销的流程", { exact: true }),
+  ).toHaveValue("一面");
   const backup = await (await request.get("/api/backup")).json();
   expect(
     backup.sources.some((s: { name: string }) => s.name === prefix + "投递表"),

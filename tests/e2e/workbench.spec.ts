@@ -5,9 +5,10 @@ test("真实任务与求职流程、备份、筛选和错误态", async ({ page,
   page.on("pageerror", (e) => clientErrors.push(e.message));
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "每一天，都向前一步" }),
+    page.getByRole("heading", { name: "今天，做重要的事" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "新增任务", exact: true }).click();
+  await page.getByRole("button", { name: "快捷新增", exact: true }).click();
+  await page.getByRole("button", { name: "新增求职任务", exact: true }).click();
   await page.getByLabel("任务名称 *").fill(sample + "任务");
   await page.getByLabel("实际专注（分钟）").fill("40");
   await page.getByRole("button", { name: "保存任务" }).click();
@@ -50,13 +51,23 @@ test("真实任务与求职流程、备份、筛选和错误态", async ({ page,
   ).toBeVisible();
   await page.getByLabel("搜索任务").fill("");
   await page.getByRole("button", { name: "求职雷达", exact: true }).click();
-  await page.getByRole("button", { name: "新增岗位", exact: true }).click();
+  await page.getByRole("button", { name: "新增投递", exact: true }).click();
   await page.getByLabel("公司 *", { exact: true }).fill(sample + "公司");
   await page.getByLabel("岗位名称 *").fill("品牌营销");
+  await expect(
+    page.getByRole("dialog").locator("input, select, textarea"),
+  ).toHaveCount(4);
+  await page.getByRole("button", { name: "保存投递" }).click();
+  await page
+    .getByRole("button", { name: sample + "公司 品牌营销", exact: true })
+    .click();
+  await page.getByRole("button", { name: "编辑资料", exact: true }).click();
   await page.getByLabel("业务方向", { exact: true }).fill("AI 出海");
   await page.getByLabel("JD 正文").fill("示例 JD：内容增长与用户洞察");
   await page.getByRole("button", { name: "保存岗位" }).click();
-  await page.getByRole("button", { name: sample + "公司 品牌营销" }).click();
+  await page
+    .getByRole("button", { name: sample + "公司 品牌营销", exact: true })
+    .click();
   await page.getByRole("button", { name: "添加安排 / 日志" }).click();
   await page.getByLabel("标题 *").fill("一面");
   await page.getByLabel("日期与时间").fill("2027-01-10T10:00");
@@ -73,17 +84,19 @@ test("真实任务与求职流程、备份、筛选和错误态", async ({ page,
   ).toBeVisible();
   await page.getByRole("button", { name: "关闭", exact: true }).click();
   await page
-    .getByLabel(sample + "公司的阶段", { exact: true })
+    .getByLabel(sample + "公司 · 品牌营销的流程", { exact: true })
     .selectOption("已投递");
   await expect(
-    page.getByLabel(sample + "公司的阶段", { exact: true }),
+    page.getByLabel(sample + "公司 · 品牌营销的流程", { exact: true }),
   ).toHaveValue("已投递");
   await page.getByRole("button", { name: "看板", exact: true }).click();
-  await page.getByLabel(sample + "公司的看板阶段").selectOption("面试");
-  await expect(page.getByLabel(sample + "公司的看板阶段")).toHaveValue("面试");
-  await page.getByRole("button", { name: sample + "公司 品牌营销" }).click();
+  await page.getByLabel(sample + "公司的看板阶段").selectOption("二面");
+  await expect(page.getByLabel(sample + "公司的看板阶段")).toHaveValue("二面");
+  await page
+    .getByRole("button", { name: sample + "公司 品牌营销", exact: true })
+    .click();
   await expect(
-    page.getByText("阶段变更：已投递 → 面试", { exact: true }),
+    page.getByText("阶段变更：已投递 → 二面", { exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "关闭", exact: true }).click();
   const response = await request.get("/api/backup");
@@ -128,7 +141,7 @@ test("移动端导航、主题和后续模块标记", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "每一天，都向前一步" }),
+    page.getByRole("heading", { name: "今天，做重要的事" }),
   ).toBeVisible();
   expect(
     await page.evaluate(
@@ -192,6 +205,11 @@ test("任务延期归档、规则排程排序和看板拖动", async ({ page, re
     },
   });
   await page.goto("/");
+  await page
+    .getByRole("button", { name: "任务管理", exact: false })
+    .first()
+    .click();
+  await page.locator(".planner-details > summary").click();
   const rows = page.locator(".schedule-row");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText(a.title);
@@ -200,6 +218,11 @@ test("任务延期归档、规则排程排序和看板拖动", async ({ page, re
   await rows.nth(0).dragTo(rows.nth(1));
   await expect(rows.nth(0)).toContainText(a.title);
   await page.reload();
+  await page
+    .getByRole("button", { name: "任务管理", exact: false })
+    .first()
+    .click();
+  await page.locator(".planner-details > summary").click();
   await expect(page.locator(".schedule-row").nth(0)).toContainText(a.title);
   await page
     .getByRole("button", { name: "任务管理", exact: false })
@@ -219,12 +242,12 @@ test("任务延期归档、规则排程排序和看板拖动", async ({ page, re
     page.getByRole("button", { name: a.title, exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "求职雷达", exact: true }).click();
-  await page.getByRole("button", { name: "新增岗位", exact: true }).click();
+  await page.getByRole("button", { name: "新增投递", exact: true }).click();
   await page
     .getByLabel("公司 *", { exact: true })
     .fill("浏览器测试（示例）拖动");
   await page.getByLabel("岗位名称 *").fill("增长");
-  await page.getByRole("button", { name: "保存岗位" }).click();
+  await page.getByRole("button", { name: "保存投递" }).click();
   await page.getByRole("button", { name: "看板", exact: true }).click();
   const card = page
     .locator(".job-card")
@@ -242,7 +265,8 @@ test("任务延期归档、规则排程排序和看板拖动", async ({ page, re
 
 test("保存失败时保留输入并允许重试", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "新增任务", exact: true }).click();
+  await page.getByRole("button", { name: "快捷新增", exact: true }).click();
+  await page.getByRole("button", { name: "新增求职任务", exact: true }).click();
   await page.getByLabel("任务名称 *").fill("失败重试（示例）");
   await page.route("**/api/tasks", (route) => route.abort("failed"));
   await page.getByRole("button", { name: "保存任务" }).click();

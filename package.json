@@ -10,6 +10,7 @@
     "build": "next build --webpack",
     "start": "next start --hostname 127.0.0.1 --port 3000",
     "db:init": "tsx scripts/init-db.ts",
+    "db:backup": "node scripts/backup-db.mjs",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",

@@ -12,7 +12,6 @@ import {
   Plus,
   Search,
   ArrowUpRight,
-  ArrowRight,
   Check,
   Clock,
   CalendarDays,
@@ -37,6 +36,7 @@ import {
   emptyJob,
   modules,
   stages,
+  applicationStages,
   defaultSettings,
   type Task,
   type Job,
@@ -48,6 +48,8 @@ import { plan, todayKey, weekly } from "@/lib/planner";
 import { Badge, Empty, Modal, Field } from "./ui";
 import JobSources from "./job-sources";
 import DailyJobs from "./daily-jobs";
+import MinimalHome from "./minimal-home";
+import QuickApplication from "./quick-application";
 
 type Page =
   | "首页"
@@ -123,7 +125,12 @@ export default function Workbench() {
     [direction, setDirection] = useState("全部"),
     [company, setCompany] = useState("全部"),
     [jobOrigin, setJobOrigin] = useState("全部"),
-    [view, setView] = useState<"table" | "board" | "sources">("table"),
+    [view, setView] = useState<
+      "table" | "board" | "sources" | "recommendations"
+    >("table"),
+    [quickAdd, setQuickAdd] = useState(false),
+    [quickJob, setQuickJob] = useState<Job | null | undefined>(undefined),
+    [quickStage, setQuickStage] = useState<Job["stage"]>("已投递"),
     [backup, setBackup] = useState<unknown>(),
     [preview, setPreview] = useState<Record<
       string,
@@ -173,6 +180,9 @@ export default function Workbench() {
     setModuleFilter("全部");
     setArchiveFilter(false);
     setJobOrigin("全部");
+    setCompany("全部");
+    setDirection("全部");
+    setView("table");
     setMobile(false);
   }
   function newTask(module: (typeof modules)[number] = "求职") {
@@ -189,7 +199,8 @@ export default function Workbench() {
   function newJob() {
     setError("");
     setJobId(undefined);
-    setJobDraft({ ...emptyJob });
+    setQuickStage("已投递");
+    setQuickJob(null);
   }
   function editJob(job: Job) {
     setError("");
@@ -204,9 +215,19 @@ export default function Workbench() {
   }
   async function updateJob(job: Job, patch: Partial<DraftJob>) {
     await act(() =>
-      api(`jobs/${job.id}`, "PUT", { ...jobBody(job), ...patch }),
+      Object.keys(patch).length === 1 && patch.stage
+        ? api(`jobs/${job.id}`, "PATCH", patch)
+        : api(`jobs/${job.id}`, "PUT", { ...jobBody(job), ...patch }),
     );
   }
+  function editApplication(job: Job) {
+    setError("");
+    setQuickJob(job);
+  }
+  const stageOptions = (job: Job) =>
+    applicationStages.includes(job.stage as (typeof applicationStages)[number])
+      ? applicationStages
+      : [job.stage, ...applicationStages];
   const now = new Date();
   void tick;
   const today = todayKey(now),
@@ -216,31 +237,12 @@ export default function Workbench() {
     settings = state?.settings ?? defaultSettings;
   const activeTasks = tasks.filter((t) => !t.archived && t.status !== "已完成"),
     activeJobs = jobs.filter((j) => !j.archived),
-    overdue = activeTasks.filter((t) => t.dueDate && t.dueDate < today),
-    todayTasks = activeTasks.filter((t) => t.dueDate === today),
-    upcoming = events
-      .filter(
-        (e) =>
-          e.kind === "面试" &&
-          new Date(e.at) >= now &&
-          new Date(e.at).getTime() - now.getTime() <= 7 * 86400000 &&
-          activeJobs.some((j) => j.id === e.jobId),
-      )
-      .sort((a, b) => a.at.localeCompare(b.at)),
-    followups = activeJobs.filter(
-      (j) => j.nextFollowUp && j.nextFollowUp <= today,
-    ),
     stats = weekly(tasks, now),
     schedule = plan(tasks, events, settings, now);
-  const deadlineTasks = activeTasks
-    .filter(
-      (t) =>
-        t.module === "论文" &&
-        t.dueDate &&
-        t.dueDate >= today &&
-        t.dueDate <= todayKey(new Date(now.getTime() + 7 * 86400000)),
-    )
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const boardStages = stages.filter(
+    (s) =>
+      !["面试", "未通过/结束"].includes(s) || jobs.some((j) => j.stage === s),
+  );
   const filteredTasks = tasks
     .filter(
       (t) =>
@@ -437,16 +439,7 @@ export default function Workbench() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-note">
-          <span className="live-dot" />
-          本地优先 · 私人空间
-          <p>
-            你的节奏，你的下一步。
-            <br />
-            数据仅保存在这台电脑。
-          </p>
-          <Badge tone="green">阶段 A · 核心工作台</Badge>
-        </div>
+        <p className="privacy-caption">数据保存在当前设备</p>
         <div className="profile">
           <div className="avatar">N</div>
           <div>
@@ -477,6 +470,16 @@ export default function Workbench() {
             <strong>{page}</strong>
           </div>
           <div className="top-actions">
+            <button
+              className="button primary"
+              onClick={() => {
+                setError("");
+                setQuickAdd(true);
+              }}
+            >
+              <Plus size={16} />
+              快捷新增
+            </button>
             <span className="local-status">
               <span className="live-dot" />
               本地 SQLite
@@ -495,25 +498,24 @@ export default function Workbench() {
         <main>
           <div className="page-heading">
             <div>
-              <div className="eyebrow">
-                {page === "首页"
-                  ? "YOUR NEXT STEP STARTS HERE"
-                  : "NEXTSTEP / WORKSPACE"}
-              </div>
-              <h1>{page === "首页" ? "每一天，都向前一步" : page}</h1>
+              <h1>{page === "首页" ? "今天，做重要的事" : page}</h1>
               <p>
                 {page === "首页"
-                  ? `${now.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" })} · 聚焦重要的事，让成长有迹可循。`
+                  ? now.toLocaleDateString("zh-CN", {
+                      month: "long",
+                      day: "numeric",
+                      weekday: "long",
+                    })
                   : page === "任务管理"
                     ? "把目标拆成行动，在这里安排、完成与回顾。"
                     : page === "求职雷达"
-                      ? "从第一份收藏到理想 Offer，清晰掌握每一次进展。"
+                      ? "记下投递，直接更新进度。"
                       : page === "设置与备份"
                         ? "你的数据由你掌握，备份一份安心。"
                         : "为下一个阶段，留好空间。"}
               </p>
             </div>
-            {page === "首页" || page === "任务管理" ? (
+            {page === "任务管理" ? (
               <button className="button primary" onClick={() => newTask()}>
                 <Plus size={17} />
                 新增任务
@@ -521,7 +523,7 @@ export default function Workbench() {
             ) : page === "求职雷达" ? (
               <button className="button primary" onClick={newJob}>
                 <Plus size={17} />
-                新增岗位
+                新增投递
               </button>
             ) : null}
           </div>
@@ -546,589 +548,74 @@ export default function Workbench() {
           ) : (
             <>
               {page === "首页" && (
-                <>
-                  <div className="stats-grid">
-                    {[
-                      {
-                        label: "今天待办",
-                        value: todayTasks.length,
-                        desc: overdue.length
-                          ? `${overdue.length} 项逾期任务需要关注`
-                          : "从一件小事开始",
-                        icon: ListTodo,
-                        tone: "blue",
-                      },
-                      {
-                        label: "求职进行中",
-                        value: activeJobs.filter(
-                          (j) =>
-                            !["Offer", "未通过/结束"].includes(j.stage) &&
-                            !(
-                              j.origin === "岗位信息库" &&
-                              j.stage === "收藏/待评估"
-                            ),
-                        ).length,
-                        desc: `${activeJobs.filter((j) => j.stage === "Offer").length} 个 Offer · ${followups.length} 个待跟进`,
-                        icon: BriefcaseBusiness,
-                        tone: "purple",
-                      },
-                      {
-                        label: "本周已完成",
-                        value: stats.count,
-                        desc: "基于本周完成的真实任务",
-                        icon: CheckCircle2,
-                        tone: "green",
-                      },
-                      {
-                        label: "本周专注",
-                        value: stats.minutes,
-                        unit: "分钟",
-                        desc: "完成任务中手动记录的实际用时",
-                        icon: Clock,
-                        tone: "orange",
-                      },
-                    ].map(({ label, value, desc, icon: Icon, tone, unit }) => (
-                      <div className="stat-card" key={label}>
-                        <div className="stat-top">
-                          <span>{label}</span>
-                          <div className={`stat-icon ${tone}`}>
-                            <Icon size={19} />
-                          </div>
-                        </div>
-                        <div className="stat-value">
-                          {value}
-                          <small>{unit ?? "项"}</small>
-                        </div>
-                        <p>{desc}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <DailyJobs
-                    state={state}
-                    busy={busy}
-                    onSources={() => {
+                <MinimalHome
+                  state={state}
+                  now={now}
+                  busy={busy}
+                  onAction={(module) => {
+                    if (module === "求职") {
                       navigate("求职雷达");
-                      setView("sources");
-                    }}
-                    onOpen={(id) => {
+                      setView("recommendations");
+                    } else
+                      navigate(
+                        module === "面试"
+                          ? "面试训练室"
+                          : module === "论文"
+                            ? "论文研究中心"
+                            : "IELTS 学习站",
+                      );
+                  }}
+                  onTask={editTask}
+                  onComplete={(t) => void updateTask(t, { status: "已完成" })}
+                  onReminder={(r) => {
+                    if (r.jobId) {
                       navigate("求职雷达");
-                      setDetailId(id);
-                    }}
-                    onQueue={(job) => updateJob(job, { stage: "待投递" })}
-                  />
-                  <div className="dashboard-columns">
-                    <div className="dashboard-left">
-                      <section className="panel planner">
-                        <div className="panel-heading">
-                          <div>
-                            <h2>
-                              <span className="heading-icon">
-                                <Target size={19} />
-                              </span>
-                              今天的行动计划
-                            </h2>
-                            <p>不用做完所有事，先做好重要的事。</p>
-                          </div>
-                          <Badge tone="blue">规则排程</Badge>
-                        </div>
-                        <div className="planner-controls">
-                          <div>
-                            <span className="control-label">
-                              今天有多少时间？
-                            </span>
-                            <div className="time-options">
-                              {[180, 360, 480].map((n) => (
-                                <button
-                                  className={
-                                    settings.availableMinutes === n
-                                      ? "selected"
-                                      : ""
-                                  }
-                                  disabled={busy}
-                                  key={n}
-                                  onClick={() =>
-                                    saveSettings({ availableMinutes: n })
-                                  }
-                                >
-                                  {n / 60} 小时
-                                </button>
-                              ))}
-                              <label className="custom-time">
-                                <input
-                                  aria-label="自定义可用分钟"
-                                  type="number"
-                                  min="15"
-                                  max="1440"
-                                  defaultValue={settings.availableMinutes}
-                                  key={settings.availableMinutes}
-                                  onBlur={(e) => {
-                                    const n = Number(e.target.value);
-                                    if (
-                                      n !== settings.availableMinutes &&
-                                      n >= 15 &&
-                                      n <= 1440
-                                    )
-                                      void saveSettings({
-                                        availableMinutes: Math.round(n),
-                                      });
-                                  }}
-                                />
-                                分钟
-                              </label>
-                            </div>
-                          </div>
-                          <label className="switch-label">
-                            <input
-                              type="checkbox"
-                              checked={settings.interviewMode}
-                              disabled={busy}
-                              onChange={(e) =>
-                                saveSettings({
-                                  interviewMode: e.target.checked,
-                                })
-                              }
-                            />
-                            <span className="switch" />
-                            面试优先模式
-                          </label>
-                        </div>
-                        <div className="schedule-summary">
-                          <span>
-                            {schedule.selected.length} 项任务 · 计划{" "}
-                            {schedule.total} 分钟
-                          </span>
-                          <span>剩余 {schedule.remaining} 分钟</span>
-                        </div>
-                        <div className="progress-track">
-                          <span
-                            style={{
-                              width: `${(schedule.total / settings.availableMinutes) * 100}%`,
-                            }}
-                          />
-                        </div>
-                        <p className="rule-note">
-                          {schedule.reason}{" "}
-                          {settings.interviewMode &&
-                            "未来 48 小时内的面试任务优先，预留一项能放入预算的论文任务。"}
-                          {schedule.warning && (
-                            <span className="danger-text">
-                              {" "}
-                              {schedule.warning}
-                            </span>
-                          )}
-                        </p>
-                        {settings.scheduleDate === today &&
-                          settings.scheduleOrder.length > 0 && (
-                            <button
-                              className="text-button accent"
-                              onClick={() =>
-                                saveSettings({
-                                  scheduleOrder: [],
-                                  scheduleDate: "",
-                                })
-                              }
-                            >
-                              恢复规则排序
-                            </button>
-                          )}
-                        {schedule.selected.length ? (
-                          <div className="schedule-list">
-                            {schedule.selected.map((t, i) => (
-                              <div
-                                key={t.id}
-                                className="schedule-row"
-                                draggable={!busy}
-                                onDragStart={(e) => {
-                                  e.dataTransfer.setData(
-                                    "application/x-nextstep-task",
-                                    t.id,
-                                  );
-                                  e.dataTransfer.effectAllowed = "move";
-                                }}
-                                onDragOver={(e) => e.preventDefault()}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  const id = e.dataTransfer.getData(
-                                    "application/x-nextstep-task",
-                                  );
-                                  if (id) moveSchedule(id, t.id);
-                                }}
-                              >
-                                <GripVertical size={16} className="grip" />
-                                <span className="step-number">
-                                  {String(i + 1).padStart(2, "0")}
-                                </span>
-                                {taskRow(t, true)}
-                                <div className="reorder">
-                                  <button
-                                    className="icon-button"
-                                    aria-label={`上移 ${t.title}`}
-                                    disabled={busy || i === 0}
-                                    onClick={() =>
-                                      moveSchedule(
-                                        t.id,
-                                        schedule.selected[i - 1].id,
-                                      )
-                                    }
-                                  >
-                                    <ArrowUp size={13} />
-                                  </button>
-                                  <button
-                                    className="icon-button"
-                                    aria-label={`下移 ${t.title}`}
-                                    disabled={
-                                      busy || i === schedule.selected.length - 1
-                                    }
-                                    onClick={() =>
-                                      moveSchedule(
-                                        t.id,
-                                        schedule.selected[i + 1].id,
-                                      )
-                                    }
-                                  >
-                                    <ArrowDown size={13} />
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <Empty
-                            title={
-                              activeTasks.length
-                                ? "当前预算内没有合适的任务"
-                                : "你的下一步，从这里开始"
-                            }
-                            description={
-                              activeTasks.length
-                                ? "增加可用时间或调整任务预计时长。"
-                                : "添加一个任务，工作台会为你安排今天的行动。"
-                            }
-                            action={
-                              <button
-                                className="button"
-                                onClick={() => newTask()}
-                              >
-                                <Plus size={16} />
-                                添加第一项任务
-                              </button>
-                            }
-                          />
-                        )}
-                      </section>
-                      <section className="panel">
-                        <div className="panel-heading">
-                          <h2>
-                            今日待办{" "}
-                            <span className="heading-count">
-                              {todayTasks.length}
-                            </span>
-                          </h2>
-                          <button
-                            className="text-button muted"
-                            onClick={() => navigate("任务管理")}
-                          >
-                            全部任务 <ArrowRight size={14} />
-                          </button>
-                        </div>
-                        {todayTasks.length ? (
-                          todayTasks.map((t) => taskRow(t, true))
-                        ) : (
-                          <p className="quiet-empty">
-                            今天没有到期任务，可在行动计划中选择下一步。
-                          </p>
-                        )}
-                        {overdue.length > 0 && (
-                          <>
-                            <div className="subheading danger-text">
-                              逾期 · {overdue.length}
-                            </div>
-                            {overdue.map((t) => taskRow(t, true))}
-                          </>
-                        )}
-                      </section>
-                    </div>
-                    <div className="dashboard-right">
-                      <section className="panel">
-                        <div className="panel-heading">
-                          <h2>近期安排</h2>
-                          <CalendarDays size={18} className="muted" />
-                        </div>
-                        {upcoming.length ||
-                        deadlineTasks.length ||
-                        followups.length ? (
-                          <div className="timeline">
-                            {upcoming.map((e) => (
-                              <button
-                                className="timeline-item text-button"
-                                key={e.id}
-                                onClick={() => {
-                                  navigate("求职雷达");
-                                  setDetailId(e.jobId);
-                                }}
-                              >
-                                <span className="timeline-dot purple" />
-                                <div>
-                                  <Badge tone="purple">面试</Badge>
-                                  <strong>
-                                    {
-                                      jobs.find((j) => j.id === e.jobId)
-                                        ?.company
-                                    }{" "}
-                                    · {e.title}
-                                  </strong>
-                                  <small>{e.at.replace("T", " ")}</small>
-                                </div>
-                              </button>
-                            ))}
-                            {deadlineTasks.map((t) => (
-                              <button
-                                className="timeline-item text-button"
-                                key={t.id}
-                                onClick={() => editTask(t)}
-                              >
-                                <span className="timeline-dot orange" />
-                                <div>
-                                  <Badge tone="orange">论文节点</Badge>
-                                  <strong>{t.title}</strong>
-                                  <small>{t.dueDate}</small>
-                                </div>
-                              </button>
-                            ))}
-                            {followups.map((j) => (
-                              <button
-                                className="timeline-item text-button"
-                                key={j.id}
-                                onClick={() => {
-                                  navigate("求职雷达");
-                                  setDetailId(j.id);
-                                }}
-                              >
-                                <span className="timeline-dot blue" />
-                                <div>
-                                  <Badge tone="blue">跟进</Badge>
-                                  <strong>
-                                    {j.company} · {j.title}
-                                  </strong>
-                                  <small>{j.nextFollowUp}</small>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="quiet-empty">
-                            未来 7 天暂无面试或论文节点。
-                            <br />
-                            在岗位详情中录入面试安排。
-                          </div>
-                        )}
-                      </section>
-                      <section className="panel">
-                        <div className="panel-heading">
-                          <h2>四个方向，一起向前</h2>
-                        </div>
-                        <div className="module-overview">
-                          {modules.map((m) => {
-                            const all = tasks.filter(
-                                (t) => t.module === m && !t.archived,
-                              ),
-                              done = all.filter(
-                                (t) => t.status === "已完成",
-                              ).length;
-                            return (
-                              <button
-                                className="module-progress text-button"
-                                key={m}
-                                onClick={() => {
-                                  navigate("任务管理");
-                                  setModuleFilter(m);
-                                }}
-                              >
-                                <div>
-                                  <span
-                                    className={`module-dot ${moduleClass[m]}`}
-                                  />
-                                  <strong>
-                                    {m === "求职"
-                                      ? "求职投递"
-                                      : m === "面试"
-                                        ? "面试训练"
-                                        : m === "论文"
-                                          ? "毕业论文"
-                                          : "IELTS 学习"}
-                                  </strong>
-                                  <span>
-                                    {done}/{all.length} 任务
-                                  </span>
-                                </div>
-                                <div
-                                  className={`progress-track ${moduleClass[m]}`}
-                                >
-                                  <span
-                                    style={{
-                                      width: `${all.length ? (done / all.length) * 100 : 0}%`,
-                                    }}
-                                  />
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                        <p className="rule-note">
-                          基于公共任务完成率；专属模块将在后续阶段开放。
-                        </p>
-                      </section>
-                      <div className="quote-card">
-                        <span>ONE STEP AT A TIME</span>
-                        <p>
-                          不必一次走得很远，
-                          <br />
-                          只要每次都向前。
-                        </p>
-                        <ArrowUpRight size={28} />
-                      </div>
-                    </div>
-                  </div>
-                </>
+                      setDetailId(r.jobId);
+                    } else {
+                      const task = tasks.find((t) => t.id === r.taskId);
+                      if (task) editTask(task);
+                    }
+                  }}
+                />
               )}
               {page === "任务管理" && (
-                <section className="panel">
-                  <div className="filter-bar">
-                    <label className="search">
-                      <Search size={17} />
-                      <input
-                        placeholder="搜索任务或备注…"
-                        aria-label="搜索任务"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                      />
-                    </label>
-                    <select
-                      aria-label="模块筛选"
-                      value={moduleFilter}
-                      onChange={(e) => setModuleFilter(e.target.value)}
-                    >
-                      {["全部", ...modules].map((m) => (
-                        <option key={m}>{m}</option>
-                      ))}
-                    </select>
-                    <select
-                      aria-label="任务状态筛选"
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value)}
-                    >
-                      {["全部", "待办", "进行中", "已完成"].map((m) => (
-                        <option key={m}>{m}</option>
-                      ))}
-                    </select>
-                    <select
-                      aria-label="时间筛选"
-                      value={dateFilter}
-                      onChange={(e) => setDateFilter(e.target.value)}
-                    >
-                      {["全部", "今天", "逾期", "未来7天"].map((m) => (
-                        <option key={m}>{m}</option>
-                      ))}
-                    </select>
-                    <label className="checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={archiveFilter}
-                        onChange={(e) => setArchiveFilter(e.target.checked)}
-                      />
-                      查看归档
-                    </label>
-                  </div>
-                  <div className="list-caption">
-                    {filteredTasks.length} 项任务{" "}
-                    <span>完成后在编辑中记录实际用时，用于本周统计。</span>
-                  </div>
-                  {filteredTasks.length ? (
-                    filteredTasks.map((t) => taskRow(t))
-                  ) : (
-                    <Empty
-                      title="这里还没有任务"
-                      description="新增任务，或调整搜索和筛选条件。"
-                      action={
-                        <button className="button" onClick={() => newTask()}>
-                          <Plus size={16} />
-                          新增任务
-                        </button>
-                      }
-                    />
-                  )}
-                </section>
-              )}
-              {page === "求职雷达" && (
                 <>
-                  <div className="job-stage-summary">
-                    {stages.map((s) => (
-                      <button
-                        className={statusFilter === s ? "selected" : ""}
-                        key={s}
-                        onClick={() =>
-                          setStatusFilter(statusFilter === s ? "全部" : s)
-                        }
-                      >
-                        <span>{s}</span>
-                        <strong>
-                          {activeJobs.filter((j) => j.stage === s).length}
-                        </strong>
-                      </button>
-                    ))}
-                  </div>
-                  <section className="panel jobs-panel">
+                  <section className="panel">
                     <div className="filter-bar">
                       <label className="search">
                         <Search size={17} />
                         <input
-                          aria-label="搜索岗位"
-                          placeholder="搜索公司、岗位或 JD…"
+                          placeholder="搜索任务或备注…"
+                          aria-label="搜索任务"
                           value={search}
                           onChange={(e) => setSearch(e.target.value)}
                         />
                       </label>
                       <select
-                        aria-label="公司筛选"
-                        value={company}
-                        onChange={(e) => setCompany(e.target.value)}
+                        aria-label="模块筛选"
+                        value={moduleFilter}
+                        onChange={(e) => setModuleFilter(e.target.value)}
                       >
-                        {["全部", ...new Set(jobs.map((j) => j.company))].map(
-                          (v) => (
-                            <option key={v}>{v}</option>
-                          ),
-                        )}
-                      </select>
-                      <select
-                        aria-label="方向筛选"
-                        value={direction}
-                        onChange={(e) => setDirection(e.target.value)}
-                      >
-                        {[
-                          "全部",
-                          ...new Set(
-                            jobs.map((j) => j.direction).filter(Boolean),
-                          ),
-                        ].map((v) => (
-                          <option key={v}>{v}</option>
+                        {["全部", ...modules].map((m) => (
+                          <option key={m}>{m}</option>
                         ))}
                       </select>
                       <select
-                        aria-label="岗位时间筛选"
+                        aria-label="任务状态筛选"
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                      >
+                        {["全部", "待办", "进行中", "已完成"].map((m) => (
+                          <option key={m}>{m}</option>
+                        ))}
+                      </select>
+                      <select
+                        aria-label="时间筛选"
                         value={dateFilter}
                         onChange={(e) => setDateFilter(e.target.value)}
                       >
-                        {["全部", "今天", "逾期", "未来7天"].map((v) => (
-                          <option key={v} value={v}>
-                            {v === "今天"
-                              ? "今天投递"
-                              : v === "逾期"
-                                ? "需要跟进"
-                                : v === "未来7天"
-                                  ? "7天内截止"
-                                  : v}
-                          </option>
+                        {["全部", "今天", "逾期", "未来7天"].map((m) => (
+                          <option key={m}>{m}</option>
                         ))}
                       </select>
                       <label className="checkbox-label">
@@ -1137,253 +624,559 @@ export default function Workbench() {
                           checked={archiveFilter}
                           onChange={(e) => setArchiveFilter(e.target.checked)}
                         />
-                        归档
+                        查看归档
                       </label>
-                      <select
-                        aria-label="记录类型筛选"
-                        value={jobOrigin}
-                        onChange={(e) => setJobOrigin(e.target.value)}
-                      >
-                        {["全部", "岗位信息库", "投递记录", "手动"].map((o) => (
-                          <option key={o}>{o}</option>
-                        ))}
-                      </select>
-                      <div className="view-toggle">
-                        <button
-                          className={view === "table" ? "selected" : ""}
-                          onClick={() => setView("table")}
-                        >
-                          表格
-                        </button>
-                        <button
-                          className={view === "board" ? "selected" : ""}
-                          onClick={() => setView("board")}
-                        >
-                          看板
-                        </button>
-                        <button
-                          className={view === "sources" ? "selected" : ""}
-                          onClick={() => setView("sources")}
-                        >
-                          来源与导入
-                        </button>
-                      </div>
-                      <a
-                        href="/api/jobs.csv"
-                        className="icon-button"
-                        title="导出全部岗位 CSV"
-                        aria-label="导出岗位 CSV"
-                      >
-                        <Download size={17} />
-                      </a>
                     </div>
-                    {view === "sources" ? (
-                      <JobSources state={state} onRefresh={refresh} />
-                    ) : view === "table" ? (
-                      filteredJobs.length ? (
-                        <div className="table-scroll">
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>公司 / 岗位</th>
-                                <th>方向 / 地区</th>
-                                <th>流程阶段</th>
-                                <th>投递日期</th>
-                                <th>下次跟进</th>
-                                <th>匹配分数</th>
-                                <th />
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {filteredJobs.map((j) => (
-                                <tr key={j.id}>
-                                  <td>
-                                    <button
-                                      className="job-name text-button"
-                                      onClick={() => setDetailId(j.id)}
-                                    >
-                                      <span className="company-avatar">
-                                        {j.company.slice(0, 1)}
-                                      </span>
-                                      <span>
-                                        <strong>{j.company}</strong>
-                                        {j.origin !== "手动" && (
-                                          <Badge
-                                            tone={
-                                              j.origin === "投递记录"
-                                                ? "purple"
-                                                : "blue"
-                                            }
-                                          >
-                                            {j.origin}
-                                          </Badge>
-                                        )}
-                                        <small>{j.title}</small>
-                                      </span>
-                                    </button>
-                                  </td>
-                                  <td>
-                                    {j.direction || "未填写"}
-                                    <small>{j.location || "—"}</small>
-                                  </td>
-                                  <td>
-                                    <select
-                                      aria-label={`${j.company}的阶段`}
-                                      className="inline-select"
-                                      disabled={busy}
-                                      value={j.stage}
-                                      onChange={(e) =>
-                                        updateJob(j, {
-                                          stage: e.target.value as Job["stage"],
-                                        })
-                                      }
-                                    >
-                                      {stages.map((s) => (
-                                        <option key={s}>{s}</option>
-                                      ))}
-                                    </select>
-                                  </td>
-                                  <td>{j.appliedDate || "—"}</td>
-                                  <td
-                                    className={
-                                      j.nextFollowUp && j.nextFollowUp <= today
-                                        ? "danger-text"
-                                        : ""
-                                    }
-                                  >
-                                    {j.nextFollowUp || "—"}
-                                  </td>
-                                  <td>
-                                    {j.matchScore === null
-                                      ? "未评分"
-                                      : `${j.matchScore} · 人工`}
-                                  </td>
-                                  <td>
-                                    <button
-                                      className="icon-button"
-                                      aria-label={`编辑 ${j.company}`}
-                                      onClick={() => editJob(j)}
-                                    >
-                                      <MoreHorizontal size={19} />
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <Empty
-                          title="下一份机会，从一条记录开始"
-                          description="手动录入真实岗位，粘贴 JD，跟踪每一步投递。"
-                          action={
-                            <button className="button primary" onClick={newJob}>
-                              <Plus size={16} />
-                              录入第一份岗位
-                            </button>
-                          }
-                        />
-                      )
+                    <div className="list-caption">
+                      {filteredTasks.length} 项任务{" "}
+                      <span>完成后在编辑中记录实际用时，用于本周统计。</span>
+                    </div>
+                    {filteredTasks.length ? (
+                      filteredTasks.map((t) => taskRow(t))
                     ) : (
-                      <>
-                        <p className="board-hint">
-                          拖动卡片更改阶段，或使用卡片底部的阶段选择器。变更会自动写入流程日志。
-                        </p>
-                        <div className="kanban">
-                          {stages.map((s, i) => (
+                      <Empty
+                        title="这里还没有任务"
+                        description="新增任务，或调整搜索和筛选条件。"
+                        action={
+                          <button className="button" onClick={() => newTask()}>
+                            <Plus size={16} />
+                            新增任务
+                          </button>
+                        }
+                      />
+                    )}
+                  </section>
+                  <details className="planner-details">
+                    <summary>排程偏好与排序</summary>
+                    <section className="panel planner">
+                      <div className="panel-heading">
+                        <div>
+                          <h2>
+                            <span className="heading-icon">
+                              <Target size={19} />
+                            </span>
+                            今天的行动计划
+                          </h2>
+                          <p>不用做完所有事，先做好重要的事。</p>
+                        </div>
+                        <Badge tone="blue">规则排程</Badge>
+                      </div>
+                      <div className="planner-controls">
+                        <div>
+                          <span className="control-label">
+                            今天有多少时间？
+                          </span>
+                          <div className="time-options">
+                            {[180, 360, 480].map((n) => (
+                              <button
+                                className={
+                                  settings.availableMinutes === n
+                                    ? "selected"
+                                    : ""
+                                }
+                                disabled={busy}
+                                key={n}
+                                onClick={() =>
+                                  saveSettings({ availableMinutes: n })
+                                }
+                              >
+                                {n / 60} 小时
+                              </button>
+                            ))}
+                            <label className="custom-time">
+                              <input
+                                aria-label="自定义可用分钟"
+                                type="number"
+                                min="15"
+                                max="1440"
+                                defaultValue={settings.availableMinutes}
+                                key={settings.availableMinutes}
+                                onBlur={(e) => {
+                                  const n = Number(e.target.value);
+                                  if (
+                                    n !== settings.availableMinutes &&
+                                    n >= 15 &&
+                                    n <= 1440
+                                  )
+                                    void saveSettings({
+                                      availableMinutes: Math.round(n),
+                                    });
+                                }}
+                              />
+                              分钟
+                            </label>
+                          </div>
+                        </div>
+                        <label className="switch-label">
+                          <input
+                            type="checkbox"
+                            checked={settings.interviewMode}
+                            disabled={busy}
+                            onChange={(e) =>
+                              saveSettings({
+                                interviewMode: e.target.checked,
+                              })
+                            }
+                          />
+                          <span className="switch" />
+                          面试优先模式
+                        </label>
+                      </div>
+                      <div className="schedule-summary">
+                        <span>
+                          {schedule.selected.length} 项任务 · 计划{" "}
+                          {schedule.total} 分钟
+                        </span>
+                        <span>剩余 {schedule.remaining} 分钟</span>
+                      </div>
+                      <div className="progress-track">
+                        <span
+                          style={{
+                            width: `${(schedule.total / settings.availableMinutes) * 100}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="rule-note">
+                        {schedule.reason}{" "}
+                        {settings.interviewMode &&
+                          "未来 48 小时内的面试任务优先，预留一项能放入预算的论文任务。"}
+                        {schedule.warning && (
+                          <span className="danger-text">
+                            {" "}
+                            {schedule.warning}
+                          </span>
+                        )}
+                      </p>
+                      {settings.scheduleDate === today &&
+                        settings.scheduleOrder.length > 0 && (
+                          <button
+                            className="text-button accent"
+                            onClick={() =>
+                              saveSettings({
+                                scheduleOrder: [],
+                                scheduleDate: "",
+                              })
+                            }
+                          >
+                            恢复规则排序
+                          </button>
+                        )}
+                      {schedule.selected.length ? (
+                        <div className="schedule-list">
+                          {schedule.selected.map((t, i) => (
                             <div
-                              className="kanban-column"
-                              key={s}
+                              key={t.id}
+                              className="schedule-row"
+                              draggable={!busy}
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData(
+                                  "application/x-nextstep-task",
+                                  t.id,
+                                );
+                                e.dataTransfer.effectAllowed = "move";
+                              }}
                               onDragOver={(e) => e.preventDefault()}
                               onDrop={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 const id = e.dataTransfer.getData(
-                                  "application/x-nextstep-job",
+                                  "application/x-nextstep-task",
                                 );
-                                const job = jobs.find((j) => j.id === id);
-                                if (job) void updateJob(job, { stage: s });
+                                if (id) moveSchedule(id, t.id);
                               }}
                             >
-                              <div className="kanban-title">
-                                <span className={`stage-dot stage-${i}`} />
-                                {s}
-                                <span>
-                                  {
-                                    filteredJobs.filter((j) => j.stage === s)
-                                      .length
+                              <GripVertical size={16} className="grip" />
+                              <span className="step-number">
+                                {String(i + 1).padStart(2, "0")}
+                              </span>
+                              {taskRow(t, true)}
+                              <div className="reorder">
+                                <button
+                                  className="icon-button"
+                                  aria-label={`上移 ${t.title}`}
+                                  disabled={busy || i === 0}
+                                  onClick={() =>
+                                    moveSchedule(
+                                      t.id,
+                                      schedule.selected[i - 1].id,
+                                    )
                                   }
-                                </span>
+                                >
+                                  <ArrowUp size={13} />
+                                </button>
+                                <button
+                                  className="icon-button"
+                                  aria-label={`下移 ${t.title}`}
+                                  disabled={
+                                    busy || i === schedule.selected.length - 1
+                                  }
+                                  onClick={() =>
+                                    moveSchedule(
+                                      t.id,
+                                      schedule.selected[i + 1].id,
+                                    )
+                                  }
+                                >
+                                  <ArrowDown size={13} />
+                                </button>
                               </div>
-                              {filteredJobs
-                                .filter((j) => j.stage === s)
-                                .map((j) => (
-                                  <article
-                                    className="job-card"
-                                    draggable={!busy}
-                                    onDragStart={(e) => {
-                                      e.dataTransfer.setData(
-                                        "application/x-nextstep-job",
-                                        j.id,
-                                      );
-                                      e.dataTransfer.effectAllowed = "move";
-                                    }}
-                                    key={j.id}
-                                  >
-                                    <button
-                                      className="text-button"
-                                      onClick={() => setDetailId(j.id)}
-                                    >
-                                      <strong>{j.company}</strong>
-                                      <h3>{j.title}</h3>
-                                    </button>
-                                    <div className="job-card-tags">
-                                      <Badge tone="blue">
-                                        {j.direction || "未设方向"}
-                                      </Badge>
-                                      <span>{j.location || "未设地区"}</span>
-                                    </div>
-                                    <p>
-                                      <CalendarDays size={13} />
-                                      {j.nextFollowUp
-                                        ? `跟进 ${j.nextFollowUp}`
-                                        : j.deadline
-                                          ? `截止 ${j.deadline}`
-                                          : "暂无时间安排"}
-                                    </p>
-                                    <select
-                                      aria-label={`${j.company}的看板阶段`}
-                                      disabled={busy}
-                                      value={j.stage}
-                                      onChange={(e) =>
-                                        updateJob(j, {
-                                          stage: e.target.value as Job["stage"],
-                                        })
-                                      }
-                                    >
-                                      {stages.map((s) => (
-                                        <option key={s}>{s}</option>
-                                      ))}
-                                    </select>
-                                  </article>
-                                ))}
-                              <button
-                                className="kanban-add"
-                                onClick={() => {
-                                  newJob();
-                                  setJobDraft({ ...emptyJob, stage: s });
-                                }}
-                              >
-                                <Plus size={15} />
-                                新增岗位
-                              </button>
                             </div>
                           ))}
                         </div>
-                      </>
-                    )}
-                  </section>
+                      ) : (
+                        <Empty
+                          title={
+                            activeTasks.length
+                              ? "当前预算内没有合适的任务"
+                              : "你的下一步，从这里开始"
+                          }
+                          description={
+                            activeTasks.length
+                              ? "增加可用时间或调整任务预计时长。"
+                              : "添加一个任务，工作台会为你安排今天的行动。"
+                          }
+                          action={
+                            <button
+                              className="button"
+                              onClick={() => newTask()}
+                            >
+                              <Plus size={16} />
+                              添加第一项任务
+                            </button>
+                          }
+                        />
+                      )}
+                    </section>
+                  </details>
                 </>
+              )}
+              {page === "求职雷达" && (
+                <section className="panel jobs-panel minimal-jobs">
+                  <div className="jobs-toolbar">
+                    <div className="view-toggle">
+                      {(
+                        [
+                          ["table", "投递记录"],
+                          ["recommendations", "岗位推荐"],
+                          ["board", "看板"],
+                          ["sources", "来源与导入"],
+                        ] as const
+                      ).map(([v, label]) => (
+                        <button
+                          key={v}
+                          className={view === v ? "selected" : ""}
+                          onClick={() => setView(v)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <a
+                      href="/api/jobs.csv?format=compact"
+                      className="button"
+                      aria-label="导出全部投递 CSV"
+                    >
+                      <Download size={15} />
+                      导出
+                    </a>
+                  </div>
+                  {view === "sources" ? (
+                    <JobSources state={state} onRefresh={refresh} />
+                  ) : view === "recommendations" ? (
+                    <DailyJobs
+                      state={state}
+                      busy={busy}
+                      onSources={() => setView("sources")}
+                      onOpen={setDetailId}
+                      onQueue={(j) => void updateJob(j, { stage: "待投递" })}
+                    />
+                  ) : (
+                    <>
+                      <div className="filter-bar application-filters">
+                        <label className="search">
+                          <Search size={17} />
+                          <input
+                            aria-label="搜索岗位"
+                            placeholder="搜索公司或岗位…"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                          />
+                        </label>
+                        <select
+                          aria-label="流程筛选"
+                          value={statusFilter}
+                          onChange={(e) => setStatusFilter(e.target.value)}
+                        >
+                          <option value="全部">全部流程</option>
+                          {boardStages.map((s) => (
+                            <option key={s}>{s}</option>
+                          ))}
+                        </select>
+                        <details className="extra-filters">
+                          <summary>更多筛选</summary>
+                          <div className="filter-bar">
+                            <select
+                              aria-label="公司筛选"
+                              value={company}
+                              onChange={(e) => setCompany(e.target.value)}
+                            >
+                              <option value="全部">全部公司</option>
+                              {[...new Set(jobs.map((j) => j.company))].map(
+                                (c) => (
+                                  <option key={c}>{c}</option>
+                                ),
+                              )}
+                            </select>
+                            <select
+                              aria-label="方向筛选"
+                              value={direction}
+                              onChange={(e) => setDirection(e.target.value)}
+                            >
+                              <option value="全部">全部方向</option>
+                              {[
+                                ...new Set(
+                                  jobs.map((j) => j.direction).filter(Boolean),
+                                ),
+                              ].map((d) => (
+                                <option key={d}>{d}</option>
+                              ))}
+                            </select>
+                            <select
+                              aria-label="岗位时间筛选"
+                              value={dateFilter}
+                              onChange={(e) => setDateFilter(e.target.value)}
+                            >
+                              {["全部", "今天", "逾期", "未来7天"].map((v) => (
+                                <option key={v} value={v}>
+                                  {v === "全部"
+                                    ? "全部日期"
+                                    : v === "逾期"
+                                      ? "需要跟进"
+                                      : v === "今天"
+                                        ? "今天投递"
+                                        : "7天内截止"}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              aria-label="记录类型筛选"
+                              value={jobOrigin}
+                              onChange={(e) => setJobOrigin(e.target.value)}
+                            >
+                              {["全部", "岗位信息库", "投递记录", "手动"].map(
+                                (o) => (
+                                  <option key={o}>{o}</option>
+                                ),
+                              )}
+                            </select>
+                            <label className="checkbox-label">
+                              <input
+                                type="checkbox"
+                                checked={archiveFilter}
+                                onChange={(e) =>
+                                  setArchiveFilter(e.target.checked)
+                                }
+                              />
+                              查看归档
+                            </label>
+                          </div>
+                        </details>
+                      </div>
+                      {view === "table" ? (
+                        filteredJobs.length ? (
+                          <div className="table-scroll">
+                            <table className="application-table">
+                              <thead>
+                                <tr>
+                                  <th>公司</th>
+                                  <th>岗位</th>
+                                  <th>投递日期</th>
+                                  <th>当前流程</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {filteredJobs.map((j) => (
+                                  <tr key={j.id}>
+                                    <td>
+                                      <button
+                                        className="text-button application-company"
+                                        aria-label={`${j.company} ${j.title}`}
+                                        onClick={() => setDetailId(j.id)}
+                                      >
+                                        {j.company}
+                                      </button>
+                                    </td>
+                                    <td>{j.title}</td>
+                                    <td>{j.appliedDate || "—"}</td>
+                                    <td>
+                                      <div className="application-row-actions">
+                                        <select
+                                          aria-label={`${j.company} · ${j.title}的流程`}
+                                          className="inline-select"
+                                          disabled={busy}
+                                          value={j.stage}
+                                          onChange={(e) =>
+                                            void updateJob(j, {
+                                              stage: e.target
+                                                .value as Job["stage"],
+                                            })
+                                          }
+                                        >
+                                          {stageOptions(j).map((s) => (
+                                            <option key={s}>{s}</option>
+                                          ))}
+                                        </select>
+                                        <button
+                                          className="text-button"
+                                          disabled={busy}
+                                          aria-label={`编辑 ${j.company} ${j.title}`}
+                                          onClick={() => editApplication(j)}
+                                        >
+                                          编辑
+                                        </button>
+                                        <button
+                                          className="icon-button"
+                                          aria-label={`查看 ${j.company} ${j.title}的详情`}
+                                          onClick={() => setDetailId(j.id)}
+                                          title="详情"
+                                        >
+                                          <MoreHorizontal size={17} />
+                                        </button>
+                                        <button
+                                          className="icon-button danger"
+                                          aria-label={`删除 ${j.company} ${j.title}`}
+                                          disabled={busy}
+                                          onClick={() => {
+                                            if (
+                                              confirm(
+                                                "删除此投递及其流程日志？关联任务会保留并解除关联。",
+                                              )
+                                            )
+                                              void act(
+                                                () =>
+                                                  api(`jobs/${j.id}`, "DELETE"),
+                                                "投递已删除",
+                                              );
+                                          }}
+                                        >
+                                          <Trash2 size={15} />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <Empty
+                            title="暂无投递记录"
+                            description="新增一条投递，或调整搜索和筛选条件。"
+                          />
+                        )
+                      ) : (
+                        <>
+                          <p className="board-hint">
+                            拖动卡片更改阶段，或使用卡片底部的阶段选择器。变更会自动写入流程日志。
+                          </p>
+                          <div className="kanban">
+                            {boardStages.map((s, i) => (
+                              <div
+                                className="kanban-column"
+                                key={s}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const id = e.dataTransfer.getData(
+                                    "application/x-nextstep-job",
+                                  );
+                                  const job = jobs.find((j) => j.id === id);
+                                  if (job) void updateJob(job, { stage: s });
+                                }}
+                              >
+                                <div className="kanban-title">
+                                  <span className={`stage-dot stage-${i}`} />
+                                  {s}
+                                  <span>
+                                    {
+                                      filteredJobs.filter((j) => j.stage === s)
+                                        .length
+                                    }
+                                  </span>
+                                </div>
+                                {filteredJobs
+                                  .filter((j) => j.stage === s)
+                                  .map((j) => (
+                                    <article
+                                      className="job-card"
+                                      draggable={!busy}
+                                      onDragStart={(e) => {
+                                        e.dataTransfer.setData(
+                                          "application/x-nextstep-job",
+                                          j.id,
+                                        );
+                                        e.dataTransfer.effectAllowed = "move";
+                                      }}
+                                      key={j.id}
+                                    >
+                                      <button
+                                        className="text-button"
+                                        onClick={() => setDetailId(j.id)}
+                                      >
+                                        <strong>{j.company}</strong>
+                                        <h3>{j.title}</h3>
+                                      </button>
+                                      <div className="job-card-tags">
+                                        <Badge tone="blue">
+                                          {j.direction || "未设方向"}
+                                        </Badge>
+                                        <span>{j.location || "未设地区"}</span>
+                                      </div>
+                                      <p>
+                                        <CalendarDays size={13} />
+                                        {j.nextFollowUp
+                                          ? `跟进 ${j.nextFollowUp}`
+                                          : j.deadline
+                                            ? `截止 ${j.deadline}`
+                                            : "暂无时间安排"}
+                                      </p>
+                                      <select
+                                        aria-label={`${j.company}的看板阶段`}
+                                        disabled={busy}
+                                        value={j.stage}
+                                        onChange={(e) =>
+                                          updateJob(j, {
+                                            stage: e.target
+                                              .value as Job["stage"],
+                                          })
+                                        }
+                                      >
+                                        {stageOptions(j).map((s) => (
+                                          <option key={s}>{s}</option>
+                                        ))}
+                                      </select>
+                                    </article>
+                                  ))}
+                                <button
+                                  className="kanban-add"
+                                  onClick={() => {
+                                    setError("");
+                                    setQuickStage(s);
+                                    setQuickJob(null);
+                                  }}
+                                >
+                                  <Plus size={15} />
+                                  新增岗位
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </section>
               )}
               {page === "成长复盘" && (
                 <>
@@ -1803,11 +1596,58 @@ export default function Workbench() {
           </form>
         </Modal>
       )}
+      {quickAdd && (
+        <Modal title="快捷新增" onClose={() => setQuickAdd(false)}>
+          <div className="quick-add-options">
+            <button
+              className="button"
+              onClick={() => {
+                setQuickAdd(false);
+                newJob();
+              }}
+            >
+              新增投递
+            </button>
+            {modules.map((m) => (
+              <button
+                className="button"
+                key={m}
+                onClick={() => {
+                  setQuickAdd(false);
+                  newTask(m);
+                }}
+              >
+                新增{m}任务
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
+      {quickJob !== undefined && (
+        <QuickApplication
+          job={quickJob ?? undefined}
+          initialStage={quickStage}
+          busy={busy}
+          error={error}
+          onClose={() => setQuickJob(undefined)}
+          onSave={(draft) =>
+            act(
+              () =>
+                api(
+                  quickJob ? `applications/${quickJob.id}` : "applications",
+                  quickJob ? "PUT" : "POST",
+                  draft,
+                ),
+              "投递已保存",
+            )
+          }
+        />
+      )}
       {jobDraft && (
         <Modal
           error={error}
           wide
-          title={jobId ? "编辑岗位" : "新增岗位"}
+          title={jobId ? "编辑岗位资料" : "新增岗位资料"}
           onClose={() => setJobDraft(null)}
         >
           <form
@@ -2031,7 +1871,7 @@ export default function Workbench() {
                 {detail.location || "未设地区"}
               </span>
               <button className="button" onClick={() => editJob(detail)}>
-                编辑岗位
+                编辑资料
               </button>
             </div>
             <div className="detail-facts">

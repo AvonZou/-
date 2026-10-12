@@ -5,6 +5,9 @@ import { randomUUID } from "node:crypto";
 import {
   taskInput,
   jobInput,
+  applicationInput,
+  jobStageInput,
+  emptyJob,
   jobSchema,
   sourceInput,
   type Source,
@@ -153,6 +156,22 @@ export class Store {
         });
     });
     return job;
+  }
+  saveApplication(raw: unknown, id?: string): Job {
+    const input = applicationInput.parse(raw);
+    const old = id ? this.find<Job>("jobs", id) : emptyJob;
+    const fields = Object.fromEntries(
+      Object.keys(emptyJob).map((k) => [k, old[k as keyof typeof old]]),
+    );
+    return this.saveJob({ ...fields, ...input }, id);
+  }
+  changeJobStage(raw: unknown, id: string): Job {
+    const input = jobStageInput.parse(raw);
+    const old = this.find<Job>("jobs", id);
+    const fields = Object.fromEntries(
+      Object.keys(emptyJob).map((k) => [k, old[k as keyof Job]]),
+    );
+    return this.saveJob({ ...fields, ...input }, id);
   }
   saveEvent(raw: unknown, id?: string): JobEvent {
     const input = eventInput.parse(raw);

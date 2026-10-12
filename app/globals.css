@@ -1234,7 +1234,7 @@ td small {
 .field.full {
   grid-column: 1/-1;
 }
-.field > span {
+.field > label {
   font-size: 11px;
   color: var(--muted);
 }
@@ -1903,5 +1903,237 @@ hr {
   }
   .sources-workspace > .panel-heading p {
     max-width: 230px;
+  }
+}
+
+/* Phase 1: calm action-first workspace. */
+.privacy-caption {
+  margin: auto 0 16px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.minimal-home {
+  display: grid;
+  gap: 24px;
+  padding-bottom: 32px;
+  max-width: 1120px;
+}
+.core-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.core-action {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 24px;
+  text-align: left;
+}
+.core-action:hover {
+  border-color: var(--accent);
+  background: var(--subtle);
+}
+.core-action > svg:first-child {
+  color: var(--accent);
+}
+.core-action strong {
+  font-size: 17px;
+}
+.core-action small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.core-action .action-arrow {
+  position: absolute;
+  right: 20px;
+  top: 27px;
+  color: var(--muted);
+}
+.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+.focus-panel,
+.reminder-panel {
+  box-shadow: none;
+  border-radius: 12px;
+}
+.focus-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 0;
+  border-top: 1px solid var(--border);
+}
+.focus-title {
+  display: block;
+  flex: 1;
+  text-align: left;
+  min-width: 0;
+}
+.focus-title strong {
+  display: block;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.focus-title small {
+  color: var(--muted);
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+}
+.reminder-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+  text-align: left;
+}
+.reminder-label {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.reminder-row strong {
+  flex: 1;
+  font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.jobs-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 20px;
+  flex-wrap: wrap;
+}
+.jobs-toolbar .view-toggle {
+  flex-wrap: wrap;
+}
+.minimal-jobs .daily-jobs {
+  box-shadow: none;
+  border: 0;
+  padding: 8px 0;
+}
+.application-table th {
+  font-size: 12px;
+  padding: 14px 16px;
+}
+.application-table td {
+  font-size: 13px;
+  padding: 16px;
+}
+.application-table td:first-child,
+.application-table td:nth-child(2) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 110px;
+}
+.application-company {
+  font-weight: 600;
+  text-align: left;
+}
+.application-row-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.application-row-actions .inline-select {
+  max-width: 160px;
+  font-size: 12px;
+}
+.application-filters {
+  align-items: flex-start;
+}
+.extra-filters {
+  font-size: 12px;
+  padding: 9px 0;
+}
+.extra-filters summary,
+.planner-details summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.extra-filters[open] {
+  flex-basis: 100%;
+}
+.extra-filters .filter-bar {
+  padding: 16px 0 0;
+  border-bottom: 0;
+}
+.planner-details {
+  margin: 24px 0;
+}
+.planner-details > summary {
+  padding: 14px 0;
+}
+.quick-add-options {
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+}
+.quick-add-options .button {
+  justify-content: flex-start;
+  padding: 14px;
+}
+@media (max-width: 1050px) {
+  .core-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .core-actions {
+    gap: 12px;
+  }
+  .core-action {
+    padding: 18px;
+  }
+  .core-action .action-arrow {
+    right: 15px;
+    top: 21px;
+  }
+  .core-action small {
+    font-size: 11px;
+  }
+  .focus-row {
+    gap: 12px;
+  }
+  .focus-row > .muted {
+    display: none;
+  }
+  .reminder-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .reminder-row strong {
+    flex-basis: calc(100% - 110px);
+  }
+  .reminder-row > small {
+    margin-left: auto;
+  }
+  .top-actions {
+    gap: 8px;
+  }
+  .top-actions .avatar {
+    display: none;
+  }
+  .top-actions .button {
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+  .application-table {
+    min-width: 690px;
   }
 }

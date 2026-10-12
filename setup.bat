@@ -6,6 +6,8 @@ where node >nul 2>nul
 if errorlevel 1 goto missing_node
 node -e "process.exit(Number(process.versions.node.split('.')[0])===24?0:1)"
 if errorlevel 1 goto missing_node
+node scripts\backup-db.mjs
+if errorlevel 1 goto failed
 echo [1/3] 安装锁定版本的依赖...
 call npm ci --no-audit --no-fund
 if errorlevel 1 goto failed

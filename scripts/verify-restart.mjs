@@ -64,6 +64,26 @@ try {
   });
   assert.equal(res.status, 200);
   const saved = await res.json();
+  const applicationResponse = await fetch(url + "/api/applications", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      company: "重启投递（示例）",
+      title: "品牌运营",
+      appliedDate: "2026-10-12",
+      stage: "已投递",
+    }),
+  });
+  assert.equal(applicationResponse.status, 200);
+  const application = await applicationResponse.json();
+  for (const stage of ["主动放弃", "二面"]) {
+    const changed = await fetch(url + `/api/jobs/${application.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage }),
+    });
+    assert.equal(changed.status, 200);
+  }
   await stop();
   await start();
   const state = await (
@@ -72,6 +92,15 @@ try {
   assert.equal(
     state.tasks.find((t) => t.id === saved.id)?.notes,
     "服务进程重启后应保留",
+  );
+  assert.equal(state.jobs.find((j) => j.id === application.id)?.stage, "二面");
+  assert.equal(
+    state.jobs.find((j) => j.id === application.id)?.appliedDate,
+    "2026-10-12",
+  );
+  assert.equal(
+    state.events.filter((e) => e.jobId === application.id).length,
+    2,
   );
   console.log("PASS: 生产服务停止并重启后，SQLite 记录及 ID 保留。");
 } finally {

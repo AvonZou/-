@@ -33,6 +33,7 @@ async function handle(req: NextRequest) {
         },
       });
     if (method === "GET" && path[0] === "jobs.csv") {
+      const compact = req.nextUrl.searchParams.get("format") === "compact";
       const columns = [
         "company",
         "title",
@@ -77,10 +78,19 @@ async function handle(req: NextRequest) {
       return new NextResponse(
         "\uFEFF" +
           [
-            labels.map(cell).join(","),
+            (compact ? ["公司", "岗位", "投递日期", "当前流程"] : labels)
+              .map(cell)
+              .join(","),
             ...store
               .state()
-              .jobs.map((j) => columns.map((k) => cell(j[k])).join(",")),
+              .jobs.map((j) =>
+                (compact
+                  ? (["company", "title", "appliedDate", "stage"] as const)
+                  : columns
+                )
+                  .map((k) => cell(j[k]))
+                  .join(","),
+              ),
           ].join("\r\n"),
         {
           headers: {
@@ -101,7 +111,7 @@ async function handle(req: NextRequest) {
       store.remove(tables[path[0] as keyof typeof tables], path[1]);
       return NextResponse.json({ ok: true });
     }
-    if (!["POST", "PUT"].includes(method))
+    if (!["POST", "PUT", "PATCH"].includes(method))
       throw new AppError("接口不存在", 404);
     if (Number(req.headers.get("content-length") ?? 0) > 10 * 1024 * 1024)
       throw new AppError("文件超过 10 MB", 413);
@@ -135,8 +145,14 @@ async function handle(req: NextRequest) {
       throw new AppError("JSON 格式不正确");
     }
     const id = method === "PUT" ? path[1] : undefined;
+    if (method === "PATCH") {
+      if (path[0] !== "jobs" || !path[1]) throw new AppError("接口不存在", 404);
+      return NextResponse.json(store.changeJobStage(body, path[1]));
+    }
     if (method === "PUT" && !id) throw new AppError("缺少记录 ID");
     if (path[0] === "tasks") return NextResponse.json(store.saveTask(body, id));
+    if (path[0] === "applications")
+      return NextResponse.json(store.saveApplication(body, id));
     if (path[0] === "jobs" && path[1] === "training" && method === "POST")
       return NextResponse.json(
         store.training(
@@ -182,4 +198,5 @@ async function handle(req: NextRequest) {
 export const GET = handle;
 export const POST = handle;
 export const PUT = handle;
+export const PATCH = handle;
 export const DELETE = handle;

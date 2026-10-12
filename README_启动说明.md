@@ -6,7 +6,7 @@
 
 从 nodejs.org 安装 Node.js 24 LTS（安装器包含 npm），重新打开终端后运行 `node --version`、`npm --version` 确认。将仓库放在有写权限的普通目录，例如 `C:\Projects\NextStepOS`，避免压缩包内直接运行。项目路径含空格也可以。
 
-首次双击 `setup.bat`，等候依赖安装及生产构建。脚本会保留现有数据库，失败会暂停并显示错误。首次安装需要联网访问 npm；运行时不需要联网或密钥。
+首次双击 `setup.bat`，等候依赖安装及生产构建。脚本会先备份现有 SQLite 到 data/backups，再安装和构建；保留现有数据库，失败会暂停并显示错误。首次安装需要联网访问 npm；运行时不需要联网或密钥。
 
 以后双击 `start.bat`，浏览器会在服务就绪后打开 `http://127.0.0.1:3000`。如浏览器没有自动打开，手动输入此地址。终端必须保持打开；停止请按 `Ctrl+C`（批处理提示是否终止时输入 Y）。不要修改监听地址为 `0.0.0.0`。
 
@@ -25,6 +25,7 @@ npm start
 
 ## 数据初始化、备份和恢复
 
+- `npm run db:backup` 将现有 SQLite（包含 WAL 中已提交记录）备份到 data/backups。
 - `npm run db:init` 创建 `data/nextstep.db`、执行迁移、建立空表。可重复运行，不覆盖记录。
 - 在「设置与备份」点击导出完整 JSON，选择保存位置。岗位可额外导出 CSV；CSV 不用于完整恢复。备份包含在线来源链接与推荐偏好，云端数据要迁移到 Windows 时使用 JSON 导入。
 - 恢复：选择导出的 JSON，检查预览数量，确认合并导入。相同 ID 跳过而不覆盖；不同 ID 的同名记录视为不同记录。导入不自动去重公司或任务标题。
@@ -50,3 +51,5 @@ npm start
 `npm run typecheck`、`npm test`、`npm run build`。浏览器自动化需要 `npx playwright install chromium`，之后停止应用并运行 `npm run test:e2e`。测试库使用 `.cache/e2e-data`，不接触默认私人数据。完整手动流程见 TEST_PLAN.md。
 
 在线文档导出表的接入方法与去重规则见 [docs/JOB_SOURCES.md](docs/JOB_SOURCES.md)。保存链接不会自动读取在线内容。
+
+极简重构第一阶段与 D:\Vibe Coding\NextStepOS 原路径的更新方法见 [docs/REFACTOR_PHASE1.md](docs/REFACTOR_PHASE1.md)。保留 data 文件夹后无需重复导入个人备份。

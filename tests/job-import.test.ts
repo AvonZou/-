@@ -50,7 +50,7 @@ test("校招导出列名与投递、测评、简历挂状态映射，原始阶�
     assert.deepEqual(preview.counts, { 新增: 3, 更新: 0, 重复: 0, 错误: 0 });
     assert.deepEqual(
       preview.rows.map((r) => r.job?.stage),
-      ["已投递", "笔试", "未通过/结束"],
+      ["已投递", "笔试", "未通过"],
     );
     f.store.importJobSheet(request);
     assert.match(
@@ -139,7 +139,7 @@ test("导入预览不写入、重复检测、非法日期/未知阶段拒绝、�
     f.store.importJobSheet(request);
     let state = f.store.state();
     assert.equal(state.jobs[0].origin, "投递记录");
-    assert.equal(state.jobs[0].stage, "面试");
+    assert.equal(state.jobs[0].stage, "一面");
     assert.equal(state.jobs[0].appliedDate, "2026-10-10");
     assert.match(state.jobs[0].notes, /自定义信息：待补作品集/);
     assert.equal(state.events.length, 1);

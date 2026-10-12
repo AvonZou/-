@@ -1,5 +1,12 @@
 "use client";
-import { useEffect, useRef, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useId,
+  cloneElement,
+  isValidElement,
+  type ReactNode,
+} from "react";
 import { Target, X } from "lucide-react";
 export function Badge({
   children,
@@ -124,10 +131,13 @@ export function Field({
   children: ReactNode;
   full?: boolean;
 }) {
+  const id = useId();
+  const control = isValidElement<{ id?: string }>(children) ? children : null;
+  const controlId = control?.props.id ?? id;
   return (
-    <label className={`field ${full ? "full" : ""}`}>
-      <span>{label}</span>
-      {children}
-    </label>
+    <div className={`field ${full ? "full" : ""}`}>
+      <label htmlFor={controlId}>{label}</label>
+      {control ? cloneElement(control, { id: controlId }) : children}
+    </div>
   );
 }

@@ -1,12 +1,22 @@
 import { z } from "zod";
 export const modules = ["求职", "面试", "论文", "雅思"] as const;
+export const applicationStages = [
+  "已投递",
+  "初筛",
+  "笔试",
+  "一面",
+  "二面",
+  "HR面",
+  "Offer",
+  "未通过",
+  "主动放弃",
+] as const;
+// Legacy values remain valid in existing records and backups. Never infer a round or rejection reason.
 export const stages = [
   "收藏/待评估",
   "待投递",
-  "已投递",
-  "笔试",
+  ...applicationStages,
   "面试",
-  "Offer",
   "未通过/结束",
 ] as const;
 const text = (max = 10000) => z.string().max(max);
@@ -71,6 +81,15 @@ export const jobInput = z
     archived: z.boolean(),
   })
   .strict();
+export const applicationInput = jobInput
+  .pick({
+    company: true,
+    title: true,
+    appliedDate: true,
+    stage: true,
+  })
+  .strict();
+export const jobStageInput = jobInput.pick({ stage: true }).strict();
 export const eventInput = z
   .object({
     jobId: id,
